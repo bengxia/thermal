@@ -7,4 +7,6 @@
 
 .idea
 
+**/.DS_Store
+
 thermal_renderer/resources/out

@@ -76,6 +76,7 @@ impl TextSpan {
         metrics.advance_width.floor() as usize * self.stretch_width as usize
     }
 
+    // TODO: get font should according to cjk of context.
     pub fn get_font(&self) -> &Font {
         if self.bold && self.italic {
             return &self.font.bold_italic;
@@ -257,6 +258,7 @@ impl ThermalImage {
         text: &str,
         span: &TextSpan,
     ) -> (usize, usize) {
+        // TODO: use cjk nano
         let font = span.get_font();
         let font_size = span.size as f32;
         let font_metrics = font.horizontal_line_metrics(font_size).unwrap();

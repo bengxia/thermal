@@ -92,7 +92,8 @@ pub struct TextContext {
     pub line_spacing: u8,
     pub color: Color,
     pub smoothing: bool,
-    pub tab_len: u8, //character width for tabs
+    pub tab_len: u8,  //character width for tabs
+    pub is_cjk: bool, //set flag if enter cjk mode
 }
 
 #[derive(Clone)]
@@ -175,6 +176,7 @@ impl Context {
                 color: Color::Black,
                 smoothing: false,
                 tab_len: 10,
+                is_cjk: false,
             },
             barcode: BarcodeContext {
                 human_readable: HumanReadableInterface::None,
@@ -245,15 +247,25 @@ impl Context {
         let print_area =
             self.graphics.paper_width - (self.graphics.margin_left + self.graphics.margin_right);
         let print_area_pixels = print_area * self.graphics.dots_per_inch as f32;
-        print_area_pixels.round() as u32
+        print_area_pixels.round() as u32 // (3.0 - 0.1 - 0.1) * 210 = 588 pixels(dots)?
+
+        // TODO: maybe 58mm width paper(margin 5mm left and right) with 203dpi, (58 - 10) / 25.4 * 203 = 384 dots.
     }
 
+    // Font size specifications may come in points(pounds) or pixels where:
+    // 1 pixel (px) is usually assumed to be 1/96th of an inch, or 96dpi.
+    // 1 point (pt) is assumed to be 1/72nd of an inch.
+    // At 96dpi, 16px = 12pt. 1px = 0.75pt.
+    // At 203dpi, 10pt = 10 * (203/96) = 21px.
     pub fn font_size_pixels(&self) -> u32 {
-        //1 point = 72 pixels
-        let pixels_per_point = self.graphics.dots_per_inch as f32 / 96f32;
-        (self.text.font_size as f32 * pixels_per_point) as u32
+        //1 point = 1/72nd of an inch.
+        let pixels_per_point = self.graphics.dots_per_inch as f32 / 96f32; // 2.1
+
+        // 1 px = 1/96 inch, 210 dots/inch, so, 1 px = 2.1 dots/point
+        (self.text.font_size as f32 * pixels_per_point) as u32 // why 22px?
     }
 
+    // 2 points per pixel at 203dpi.
     pub fn points_to_pixels(&self, points: f32) -> u32 {
         let pixels_per_point = self.graphics.dots_per_inch as f32 / 96f32;
         (points * pixels_per_point) as u32

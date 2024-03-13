@@ -45,6 +45,11 @@ fn thick_barcode() {
     it_renders("thick_barcode.bin");
 }
 
+#[test]
+fn oiap4md() {
+    it_renders_image("test.esc");
+}
+
 fn it_renders(filename: &str) {
     it_renders_image(filename);
     it_renders_html(filename);

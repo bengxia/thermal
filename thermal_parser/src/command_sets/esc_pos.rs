@@ -56,6 +56,8 @@ pub fn new() -> CommandSet {
         set_absolute_vertical_print_position::new(),
         print_area::new(),
         select_standard_mode::new(),
+        enter_cjk_mode::new(),
+        cancel_cjk_mode::new(),
     ];
 
     CommandSet {
