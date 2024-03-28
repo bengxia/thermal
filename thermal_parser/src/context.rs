@@ -94,6 +94,7 @@ pub struct TextContext {
     pub smoothing: bool,
     pub tab_len: u8,  //character width for tabs
     pub is_cjk: bool, //set flag if enter cjk mode
+    pub encoding: String,
 }
 
 #[derive(Clone)]
@@ -177,6 +178,7 @@ impl Context {
                 smoothing: false,
                 tab_len: 10,
                 is_cjk: false,
+                encoding: "utf-8".to_string(),
             },
             barcode: BarcodeContext {
                 human_readable: HumanReadableInterface::None,

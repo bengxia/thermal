@@ -120,6 +120,7 @@ impl CommandRenderer for ImageRenderer {
             .add_top_margin(context.line_height_pixels() as usize * 2);
 
         //Add in the left and right margin;
+        // 3 inches * 210 dpi = 630 dots
         self.image.expand_to_width(
             (context.graphics.paper_width * context.graphics.dots_per_inch as f32) as usize,
         );

@@ -8,6 +8,7 @@ impl CommandHandler for Handler {
         let n = *command.data.get(0).unwrap_or(&0u8);
         context.text.font = Font::from_raw(n);
 
+        // TODO: font size of CJK should be adjusted
         if n == 0 {
             context.text.font_size = context.default.as_ref().unwrap().text.font_size;
         } else {
