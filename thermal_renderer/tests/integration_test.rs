@@ -4,6 +4,7 @@ use thermal_parser::context::Context;
 use thermal_renderer::html_renderer::HtmlRenderer;
 use thermal_renderer::image_renderer::ImageRenderer;
 use thermal_renderer::renderer::CommandRenderer;
+use thermal_renderer::svg_renderer::SvgRenderer;
 
 #[test]
 fn scale_test() {
@@ -50,10 +51,39 @@ fn oiap4md() {
     it_renders_image("test.esc");
 }
 
+#[test]
+fn oiap4svg() {
+    it_renders_svg("test_receipt_2.bin");
+    // it_renders_svg("receipt2.bin");
+}
+
 fn it_renders(filename: &str) {
     it_renders_image(filename);
     it_renders_html(filename);
 }
+
+fn it_renders_svg(filename: &str) {
+    let out = format!(
+        "{}/{}/{}/{}",
+        env!("CARGO_MANIFEST_DIR"),
+        "resources",
+        "out",
+        filename
+    );
+    let bytes = std::fs::read(get_test_bin(filename)).unwrap();
+    let w = std::fs::File::create(out + ".svg").unwrap();
+    let mut svg_renderer = SvgRenderer::new(Box::from(w));
+
+    let mut context = Context::new();
+
+    let on_new_command = move |cmd: Command| {
+        svg_renderer.process_command(&mut context, &cmd);
+    };
+
+    let mut command_parser = thermal_parser::new_esc_pos_parser(Box::from(on_new_command));
+    command_parser.parse_bytes(&bytes);
+}
+
 fn it_renders_html(filename: &str) {
     let out = format!(
         "{}/{}/{}/{}",

@@ -1,45 +1,15 @@
-extern crate fontdue;
-extern crate png;
 extern crate textwrap;
 
-use std::collections::HashMap;
 use std::fmt::Write as _;
 use textwrap::WordSeparator;
+use thermal_parser::context;
 use thermal_parser::context::{Context, TextJustify, TextStrikethrough, TextUnderline};
 
 use super::BASE_FONT_SIZE;
-
-#[derive(Clone, Debug)]
-#[allow(dead_code)]
-pub struct FontDesc {
-    pub family: String,
-    pub style: String,
-    pub size: (usize, usize), // width, height
-}
-
-impl Default for FontDesc {
-    fn default() -> Self {
-        Self {
-            family: String::from("monospace"),
-            style: String::from(""),
-            size: (12, 24), // default ANK font is 12 × 24 dots(px), CJK is 24 × 24
-        }
-    }
-}
-
-pub type EncodingFontMap = HashMap<String, FontDesc>;
-
-// #[derive(Default, Debug, Clone)]
-// #[allow(dead_code)]
-// struct TextElement {
-//     text: String,
-//     font: FontDesc,
-//     attrs: HashMap<String, String>,
-//     position: u16, // absolute x coordinate of the canvas
-//     scale: u8,
-//     encoding: String,
-//     space: u8, // in dots, spaces between two characters, default 0
-// }
+use super::DEFAULT_CPL;
+use super::DEFAULT_FONT_FAMILY;
+use unicode_display_width::is_double_width;
+use unicode_display_width::width as diswidth;
 
 /// A simple svg renderer designed for thermal printing effects emulation
 /// This allows for an image with a fixed width that can grow in height
@@ -48,7 +18,6 @@ pub type EncodingFontMap = HashMap<String, FontDesc>;
 pub struct SvgImage {
     pub width: u16, // in dots, default 576 on 80mm width(printable width 72mm, 203dpi)
     pub height: u16,
-    fonts: EncodingFontMap,
     pub svg_content: Vec<String>,
     pub base_cpl: u8, // number of characters per line, default width/12 in ANK, width/24 in CJK
     pub line_margin: u8,
@@ -59,7 +28,6 @@ pub struct SvgImage {
 }
 
 pub struct TextSpan {
-    pub font: FontDesc,
     pub text: String,
     pub bold: bool,
     pub italic: bool,
@@ -70,11 +38,10 @@ pub struct TextSpan {
     pub inverted: bool,
     pub upside_down: bool,
     pub justify: TextJustify,
-    pub encoding: String,
 }
 
 impl TextSpan {
-    pub fn new(font: FontDesc, text: String, context: &Context) -> Self {
+    pub fn new(text: String, context: &Context) -> Self {
         let style = &context.text;
 
         let underline = match style.underline {
@@ -90,7 +57,6 @@ impl TextSpan {
         };
 
         Self {
-            font,
             text,
             bold: style.bold,
             italic: style.italic,
@@ -101,7 +67,6 @@ impl TextSpan {
             inverted: style.invert,
             upside_down: style.upside_down,
             justify: context.text.justify.clone(),
-            encoding: context.text.encoding.clone(),
         }
     }
 }
@@ -113,13 +78,12 @@ pub struct TextLayout {
 }
 
 impl SvgImage {
-    pub fn new(fonts: EncodingFontMap, width: u16) -> Self {
+    pub fn new(width: u16) -> Self {
         Self {
             width,
             height: 0,
-            fonts,
             svg_content: Vec::new(),
-            base_cpl: 48,
+            base_cpl: DEFAULT_CPL,
             line_margin: 0,
             line_align: 0,
             line_height: 24,
@@ -138,34 +102,14 @@ impl SvgImage {
         self.svg_content = Vec::new();
     }
 
-    pub fn get_fontdesc(&self, encoding: &str) -> FontDesc {
-        self.fonts
-            .get(encoding)
-            .unwrap_or(&FontDesc::default())
-            .clone()
-    }
-
-    pub(super) fn construct_svg_doc(&self, encoding: &str) -> String {
+    pub(super) fn construct_svg_doc(&self, context: &context::Context) -> String {
         let mut svgdoc = String::new();
-        write!(&mut svgdoc, r#"<svg width="{0}", height="{1}"px viewBox="0 0 {2} {3}" preserveAspectRatio="xMinYMin meet"
-xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1">
-        "#, self.width, self.height, self.width, self.height).unwrap(); // svg header
+        write!(&mut svgdoc, r#"<svg width="{0}px" height="{1}px" viewBox="0 0 {2} {3}" preserveAspectRatio="xMinYMin meet" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1">
+        "#, self.width, context.graphics.y, self.width, context.graphics.y).unwrap(); // svg header
 
-        let font = self.get_fontdesc(encoding);
-        let mut csstyle = String::new();
-        if font.style.is_empty() == false {
-            write!(
-                &mut csstyle,
-                r#"<style type="text/css"><![CDATA[{}]]></style>"#,
-                font.style
-            )
-            .unwrap();
-        }
+        write!(&mut svgdoc, r##"<defs><filter id="textinvert" x="0" y="0" width="100%" height="100%"><feFlood flood-color="#000"/><feComposite in="SourceGraphic" operator="xor"/></filter></defs>"##).unwrap(); // invert filter
 
-        write!(&mut svgdoc, "\n{}\n", csstyle).unwrap(); // css style
-        write!(&mut svgdoc, r#"<defs><filter id="textinvert" x="0" y="0" width="100%" height="100%"><feFlood flood-color="\#000"/><feComposite in="SourceGraphic" operator="xor"/></filter></defs>"#).unwrap(); // invert filter
-
-        write!(&mut svgdoc, r#"<g font-family="{0}" fill="\#000" font-size="{1}" dominant-baseline="text-after-edge" text-anchor="middle">{2}</g></svg>\n"#, font.family, font.size.0, self.svg_content.join("")).unwrap();
+        write!(&mut svgdoc, r##"<g font-family="{0}" fill="#000" font-size="{1}" dominant-baseline="text-after-edge" text-anchor="middle">{2}</g></svg>"##, DEFAULT_FONT_FAMILY, BASE_FONT_SIZE.1 - 2, self.svg_content.join("")).unwrap();
         svgdoc
     }
 
@@ -187,12 +131,17 @@ xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" ve
 
         // walk through the layout, and break it into lines
         for span in &mut layout.spans {
-            let (mut char_width_px, mut char_height_px) = span.font.size;
+            let (mut char_width_px, _) = BASE_FONT_SIZE; // (12,24) as FontA baseline
             char_width_px = char_width_px * span.stretch_width as usize;
-            char_height_px = char_height_px * span.stretch_height as usize;
             let words = WordSeparator::UnicodeBreakProperties.find_words(span.text.as_str());
-
+            // Word: {
+            //     word: String,
+            //     whitespace: String,
+            //     penalty: String,
+            //     width: usize,
+            // }
             for word in words {
+                // \t,\r,\n must be an individual textspan, there's no other characters.
                 if word.word.contains('\t') {
                     let mut tab_len = layout.tab_len * char_width_px;
                     while tab_len < temp_x {
@@ -214,8 +163,8 @@ xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" ve
                     temp_x = 0;
                     continue;
                 }
-
-                let word_len = word.word.len() + word.whitespace.len();
+                let dwidth = diswidth(word.word);
+                let word_len = dwidth as usize + word.whitespace.len();
 
                 if word_len * char_width_px < width - temp_x {
                     // can be filled in this line.
@@ -227,11 +176,17 @@ xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" ve
                     temp_x += word_len * char_width_px;
                 } else if word_len * char_width_px > width {
                     // this text span should break into multiple lines.
+                    // textwrap::wrap is a better choice while the word contains CJK characters?
+                    // NO! the word just one word(2 display width) for CJK.
                     let broken = word.break_apart(width / char_width_px);
 
                     for broke in broken {
-                        let broke_word_len = broke.word.len() + broke.whitespace.len();
-                        if width - (broke_word_len * char_width_px) < char_width_px {
+                        let broke_word_len = diswidth(broke.word) as usize + broke.whitespace.len();
+                        println!(
+                            "word: {:#?}, broke: {:#?}, broke_word_len: {}, width: {}, char_width_px: {}",
+                            word, broke, broke_word_len, width, char_width_px
+                        );
+                        if char_width_px + (broke_word_len * char_width_px) > width {
                             // use a whole line to fill this fragment.
                             lines.push(newline.clone());
                             temp_x = 0;
@@ -248,7 +203,7 @@ xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" ve
                                 format!("{}{}", broke.word, broke.whitespace),
                                 temp_x,
                             ));
-                            temp_x += broke_word_len as usize * char_width_px;
+                            temp_x += broke_word_len * char_width_px;
                         }
                     }
                 } else {
@@ -272,22 +227,33 @@ xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" ve
             let mut line_height_mult = 1;
             let mut precalculated_width = 0;
             let mut justify = TextJustify::Left;
-            let mut iter = 0;
+            let mut stretch_width = 1;
+            let mut stretch_height = 2;
+            let mut itered = false;
 
             for word in &line {
-                if iter == 0 {
+                let (mut char_width_px, _) = BASE_FONT_SIZE; // (12,24) as FontA baseline
+                if itered == false {
                     justify = word.0.justify.clone();
+                    stretch_width = word.0.stretch_width;
+                    stretch_height = word.0.stretch_height;
+                    char_width_px = char_width_px * stretch_width as usize;
                 }
-                precalculated_width += word.1.len() * BASE_FONT_SIZE.0;
-                iter += 1;
+                precalculated_width += diswidth(word.1.as_str()) as usize * char_width_px;
+                itered = true;
             }
 
             match justify {
-                TextJustify::Center => new_x = (width - precalculated_width) / 2,
+                TextJustify::Center => {
+                    new_x = (width - precalculated_width) / (2 * stretch_width as usize)
+                }
                 TextJustify::Right => new_x = width - precalculated_width,
                 _ => {}
             }
-
+            self.svg_content.push(format!(
+                r#"<g transform="translate({},{})"><text transform="scale({},{})">"#,
+                0, new_y, stretch_width, stretch_height
+            ));
             for word in &line {
                 if word.0.stretch_height > 1 {
                     line_height_mult = word.0.stretch_height as usize;
@@ -295,6 +261,7 @@ xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" ve
                 let (w, _) = self.render_word(new_x, new_y, word.1.as_str(), word.0);
                 new_x += w;
             }
+            self.svg_content.push("</text></g>".to_string());
             new_x = x;
             new_y += layout.line_height as usize * line_height_mult;
         }
@@ -307,8 +274,36 @@ xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" ve
         x: usize,
         y: usize,
         text: &str,
-        span: &TextSpan,
+        _span: &TextSpan,
     ) -> (usize, usize) {
-        todo!() // TODO: use cjk nano
+        println!("{x:>3}, {y:>3}: {text}");
+
+        let (char_width_px, _) = BASE_FONT_SIZE; // (12,24) as FontA baseline
+                                                 // char_width_px = char_width_px * span.stretch_width as usize;
+        let mut curr_x = x;
+        let mut w = 0;
+        for c in text.chars() {
+            let iscjk = is_double_width(c);
+            self.svg_content.push(format!(
+                r#"<tspan x="{}">{}</tspan>"#,
+                curr_x,
+                SvgImage::escape_char(c)
+            ));
+            let chwidth = char_width_px * if iscjk { 2 } else { 1 };
+            curr_x = curr_x + chwidth;
+            w = w + chwidth;
+        }
+
+        (w, 0)
+    }
+
+    fn escape_char(c: char) -> String {
+        match c {
+            '&' => "&amp;".to_string(),
+            '<' => "&lt;".to_string(),
+            '>' => "&gt;".to_string(),
+            ' ' => "&#xa0;".to_string(),
+            _ => c.to_string(),
+        }
     }
 }
